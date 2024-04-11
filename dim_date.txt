@@ -1,0 +1,137 @@
+let
+    // Source: https://radacad.com/all-in-one-script-to-create-calendar-table-or-date-dimension-using-dax-in-power-bi
+
+    // ****************************************************************************************************************
+    // Configuration start
+    // ****************************************************************************************************************
+    
+    // Auto defined
+    Today=Date.From(DateTime.LocalNow()), // today's date    
+
+    // User defined
+    YearOffsetFrom=5, // Set how many years to go back.
+    YearOffsetTo=5, // Set how many years to go forward.
+    StartofFinancialYear = 4, // set the month number that is start of the financial year. example; if Financial year start is July, value is 7
+    firstDayofWeek=Day.Monday, // set the week's start day, values: Day.Monday, Day.Sunday....
+
+    // Derived from user defined / auto-defined
+    FromYear = Number.FromText(Date.ToText(Date.AddYears(Today, -YearOffsetFrom), "yyyy")), // Set the start year of the date dimension. Dates start from 1st of January of this year
+    ToYear = Number.FromText(Date.ToText(Date.AddYears(Today, YearOffsetTo), "yyyy")), // Set the end year of the date dimension. Dates end at 31st of December of this year
+    
+    // ****************************************************************************************************************
+    // Calendar year
+    // ****************************************************************************************************************
+
+        // ****************************************************************************************************************
+        // Initial calendar year setup
+        // ****************************************************************************************************************
+        FromDate=#date(FromYear,1,1),
+        ToDate=#date(ToYear,12,31),
+        Source=List.Dates(
+            FromDate,
+            Duration.Days(ToDate-FromDate)+1,
+            #duration(1,0,0,0)
+        ),
+        #"Converted to Table" = Table.FromList(Source, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+        #"Renamed Columns" = Table.RenameColumns(#"Converted to Table",{{"Column1", "Date"}}),
+
+        // ****************************************************************************************************************
+        // Calendar Day
+        // ****************************************************************************************************************
+        #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns",{{"Date", type date}}),
+        #"Inserted date key" = Table.AddColumn(#"Changed Type", "DateKey", each Number.From(Date.ToText([Date],"yyyyMMdd")), Int64.Type),
+        #"Inserted Date Offset" = Table.AddColumn(#"Inserted date key", "Date Offset", each Number.From(Date.ToText([Date],"yyyyMMdd")) - Number.From(Date.ToText(DateTime.Date(DateTime.LocalNow()),"yyyyMMdd")), Int64.Type),
+        #"Inserted Date is Current" = Table.AddColumn(#"Inserted Date Offset", "Date is Current", each if [Date Offset] = 0 then true else false, Logical.Type),
+
+        #"Inserted Date is Past" = Table.AddColumn(#"Inserted Date is Current", "Date is Past", each if [Date Offset] < 0 then true else false, Logical.Type),
+        #"Inserted Date is Future" = Table.AddColumn(#"Inserted Date is Past", "Date is Future", each if [Date Offset] > 0 then true else false, Logical.Type),
+
+        #"Inserted Date is Today or Past" = Table.AddColumn(#"Inserted Date is Future", "Date is Today or Past", each if [Date is Current] = true or [Date is Past] = true then true else false, Logical.Type),
+        #"Inserted Date is Today or Future" = Table.AddColumn(#"Inserted Date is Today or Past", "Date is Today or Future", each if [Date is Current] = true or [Date is Future] = true then true else false, Logical.Type),
+
+        // ****************************************************************************************************************
+        // Calendar Year
+        // ****************************************************************************************************************
+        #"Inserted Year" = Table.AddColumn(#"Inserted Date is Today or Future", "Year", each Date.Year([Date]), Int64.Type),
+        #"Inserted Year Start Date" = Table.AddColumn(#"Inserted Year", "Year Start Date", each Date.StartOfYear([Date]), type date),
+        #"Inserted Year End Date" = Table.AddColumn(#"Inserted Year Start Date", "Year End Date", each Date.EndOfYear([Date]), type date),
+        #"Inserted Year Offset" = Table.AddColumn(#"Inserted Year End Date", "Year Offset", each Date.Year([Date]) - Date.Year(DateTime.Date(DateTime.LocalNow())), Int64.Type),
+        
+        // ****************************************************************************************************************
+        // Calendar Quarter
+        // ****************************************************************************************************************
+        #"Inserted Quarter Number" = Table.AddColumn(#"Inserted Year Offset", "Quarter Number", each Date.QuarterOfYear([Date]), Int64.Type),
+        #"Inserted Quarter Date Start" = Table.AddColumn(#"Inserted Quarter Number", "Quarter Date Start", each Date.StartOfQuarter([Date]), type date),
+        #"Inserted Quarter Date End" = Table.AddColumn(#"Inserted Quarter Date Start", "Quarter Date End", each Date.EndOfQuarter([Date]), type date),
+        #"Inserted Quarter Name" = Table.AddColumn(#"Inserted Quarter Date End", "Quarter Name", each Text.Combine({"Q", Text.From([Quarter Number], "en-GB")}), type text),
+
+        // ****************************************************************************************************************
+        // Calendar Month
+        // ****************************************************************************************************************
+        #"Inserted Month" = Table.AddColumn(#"Inserted Quarter Name", "Month", each Date.Month([Date]), Int64.Type),
+        #"Inserted Month Date Start" = Table.AddColumn(#"Inserted Month", "Month Date Start", each Date.StartOfMonth([Date]), type date),
+        #"Inserted Month Date End" = Table.AddColumn(#"Inserted Month Date Start", "Month Date End", each Date.EndOfMonth([Date]), type date),
+        #"Inserted Month Number of Days" = Table.AddColumn(#"Inserted Month Date End", "Month Number of Days", each Date.DaysInMonth([Date]), Int64.Type),
+        #"Inserted Month Name" = Table.AddColumn(#"Inserted Month Number of Days", "Month Name", each Date.MonthName([Date]), type text),
+        #"Inserted Month Name Short" = Table.AddColumn(#"Inserted Month Name", "Month Name Short", each Date.ToText([Date],"MMM"), type text),
+        #"Inserted Month Offset" = Table.AddColumn(#"Inserted Month Name Short", "Month Offset", each Date.Month([Date]) - Date.Month(DateTime.Date(DateTime.LocalNow())), Int64.Type),
+
+        // ****************************************************************************************************************
+        // Calendar Week
+        // ****************************************************************************************************************
+        #"Inserted Week of Year" = Table.AddColumn(#"Inserted Month Offset", "Week of Year", each Date.WeekOfYear([Date],firstDayofWeek), Int64.Type),
+        #"Inserted Week of Month" = Table.AddColumn(#"Inserted Week of Year", "Week of Month", each Date.WeekOfMonth([Date],firstDayofWeek), Int64.Type),
+        #"Inserted Week Date Start" = Table.AddColumn(#"Inserted Week of Month", "Week Date Start", each Date.StartOfWeek([Date],firstDayofWeek), type date),
+        #"Inserted Week Date End" = Table.AddColumn(#"Inserted Week Date Start", "Week Date End", each Date.EndOfWeek([Date],firstDayofWeek), type date),
+
+        // ****************************************************************************************************************
+        // Calendar Day
+        // ****************************************************************************************************************
+        #"Inserted Day" = Table.AddColumn(#"Inserted Week Date End", "Day", each Date.Day([Date]), Int64.Type),
+        #"Inserted Day Name" = Table.AddColumn(#"Inserted Day", "Day Name", each Date.DayOfWeekName([Date]), type text),
+        #"Inserted Day of Week" = Table.AddColumn(#"Inserted Day Name", "Day of Week", each Date.DayOfWeek([Date],firstDayofWeek), Int64.Type),
+        #"Inserted Day of Year" = Table.AddColumn(#"Inserted Day of Week", "Day of Year", each Date.DayOfYear([Date]), Int64.Type),
+
+    // ****************************************************************************************************************
+    // Financial year
+    // ****************************************************************************************************************
+
+        // ****************************************************************************************************************
+        // Initial Financial year setup
+        // ****************************************************************************************************************
+        FinancialMonthBaseIndex=13-StartofFinancialYear, // (9)
+        adjustedFinancialMonthBaseIndex=if(FinancialMonthBaseIndex>=12 or FinancialMonthBaseIndex<0) then 0 else FinancialMonthBaseIndex,
+        #"Added Custom" = Table.AddColumn(#"Inserted Day of Year", "FinancialBaseDate", each Date.AddMonths([Date],adjustedFinancialMonthBaseIndex)),
+        #"Changed Type1" = Table.TransformColumnTypes(#"Added Custom",{{"FinancialBaseDate", type date}}),
+
+        // ****************************************************************************************************************
+        // Financial year
+        // ****************************************************************************************************************
+        #"Added Financial Year Number" = Table.AddColumn(#"Changed Type1", "Financial Year Number", each Date.Year([FinancialBaseDate]), Int64.Type),
+        #"Added Financial Year Offset" = Table.AddColumn(#"Added Financial Year Number", "Financial Year Offset", each Date.Year([FinancialBaseDate]) - Date.Year(DateTime.Date(DateTime.LocalNow())), Int64.Type),
+        
+        // ****************************************************************************************************************
+        // Financial quarter
+        // ****************************************************************************************************************
+        #"Added Financial Quarter Number" = Table.AddColumn(#"Added Financial Year Offset", "Financial Quarter Number", each Date.QuarterOfYear([FinancialBaseDate]), Int64.Type),
+        #"Added Financial Quarter Name" = Table.AddColumn(#"Added Financial Quarter Number", "Financial Quarter Name", each Text.Combine({"Q", Text.From([Financial Quarter Number], "en-GB")}), type text),
+
+        // ****************************************************************************************************************
+        // Financial month
+        // ****************************************************************************************************************
+        #"Added Financial Month Number" = Table.AddColumn(#"Added Financial Quarter Name", "Financial Month Number", each Date.Month([FinancialBaseDate]), Int64.Type),
+        #"Added Financial Month Name Short" = Table.AddColumn(#"Added Financial Month Number", "Financial Month Name Short", each Date.ToText([Date],"MMM")),
+
+        // ****************************************************************************************************************
+        // Customs
+        // ****************************************************************************************************************
+        #"Added Custom4" = Table.AddColumn(#"Added Financial Month Name Short", "Year-Month", each Date.ToText([Date],"MMM yyyy")),
+        #"Added Custom5" = Table.AddColumn(#"Added Custom4", "Year-Month Code", each Date.ToText([Date],"yyyyMM")),
+        #"Changed Type5" = Table.TransformColumnTypes(#"Added Custom5",{{"Year-Month", type text}, {"Year-Month Code", Int64.Type}}),
+
+        // ****************************************************************************************************************
+        // Cleanup
+        // ****************************************************************************************************************
+        #"Removed Columns" = Table.RemoveColumns(#"Changed Type5",{"FinancialBaseDate"})
+in
+    #"Removed Columns"
